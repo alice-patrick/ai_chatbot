@@ -1,0 +1,9 @@
+flask
+gunicorn
+pillow
+transformers
+torch
+torchvision
+ultralytics
+opencv-python-headless
+requests

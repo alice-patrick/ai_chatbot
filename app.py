@@ -1,0 +1,167 @@
+import os
+print("RUNNING:", os.path.abspath(__file__))
+print("STATIC DIR SHOULD BE:", os.path.join(os.path.dirname(__file__), "static"))
+
+import uuid
+import time
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+
+from flask import Flask, render_template, request, jsonify, send_from_directory
+from werkzeug.utils import secure_filename
+
+import cv2
+from ultralytics import YOLO
+from transformers import pipeline
+from PIL import Image
+
+
+# ----------------- Flask setup -----------------
+BASE_DIR = os.path.dirname(__file__)
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
+TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
+
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(TEMPLATE_DIR, exist_ok=True)
+
+app = Flask(__name__, template_folder=TEMPLATE_DIR)
+
+app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # 8MB
+ALLOWED = {"png", "jpg", "jpeg", "webp"}
+
+DETECTION_TIMEOUT = 120
+CAPTION_TIMEOUT = 120
+executor = ThreadPoolExecutor(max_workers=2)
+
+# ----------------- Load models ONCE -----------------
+yolo = YOLO("yolov8n.pt")
+captioner = pipeline("image-to-text", model="Salesforce/blip-image-captioning-large")
+
+
+def allowed_file(name: str) -> bool:
+    return "." in name and name.rsplit(".", 1)[1].lower() in ALLOWED
+
+
+def with_timeout(fn, *args, timeout: int):
+    fut = executor.submit(fn, *args)
+    return fut.result(timeout=timeout)
+
+
+# ----------------- Core logic -----------------
+def detect_objects(image_path: str, conf_thres=0.20, img_size=960):
+    img = cv2.imread(image_path)
+    if img is None:
+        raise FileNotFoundError(image_path)
+
+    res = yolo.predict(img, conf=conf_thres, imgsz=img_size, verbose=False)[0]
+    names = res.names
+
+    objects = []
+    for b in res.boxes:
+        conf = float(b.conf[0])
+        cls_id = int(b.cls[0])
+        label = names[cls_id]
+        x1, y1, x2, y2 = [int(v) for v in b.xyxy[0].tolist()]
+        objects.append({"label": label, "confidence": conf, "bbox": [x1, y1, x2, y2]})
+
+    return img, objects
+
+
+def summarize_objects(objects):
+    counts = Counter([o["label"] for o in objects]) if objects else Counter()
+    avg_conf = (sum(o["confidence"] for o in objects) / len(objects)) if objects else 0.0
+    return {"counts": dict(counts), "avg_conf": float(avg_conf)}
+
+
+def caption_image(img_bgr) -> str:
+    pil = Image.fromarray(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
+    return captioner(pil, max_new_tokens=60)[0]["generated_text"].strip()
+
+
+def build_paragraph(caption: str, counts_dict: dict) -> str:
+    # One paragraph, caption + factual detected counts
+    counts = dict(counts_dict)
+
+    people = counts.pop("person", 0)
+    obj_items = sorted(counts.items(), key=lambda x: x[1], reverse=True)
+
+    parts = [caption.rstrip(".") + "."]
+
+    if people:
+        parts.append(f"Detected {people} person instance(s).")
+
+    if obj_items:
+        objs = ", ".join([f"{k} x{v}" for k, v in obj_items])
+        parts.append(f"Detected objects include: {objs}.")
+
+    return " ".join(parts)
+
+
+# ----------------- Routes -----------------
+@app.route("/")
+def home():
+    return render_template("index.html")
+
+
+@app.route("/uploads/<path:filename>")
+def uploads(filename):
+    return send_from_directory(UPLOAD_DIR, filename)
+
+
+@app.route("/api/chat", methods=["POST"])
+def chat_api():
+    t0 = time.time()
+
+    if "image" not in request.files:
+        return jsonify({"ok": False, "error": "No file uploaded."}), 400
+
+    file = request.files["image"]
+    if not file.filename or file.filename.strip() == "":
+        return jsonify({"ok": False, "error": "Empty filename."}), 400
+
+    if not allowed_file(file.filename):
+        return jsonify({"ok": False, "error": "Invalid file type. Use PNG/JPG/JPEG/WEBP."}), 400
+
+    safe_name = secure_filename(file.filename)
+    saved_name = f"{uuid.uuid4().hex}_{safe_name}"
+    path = os.path.join(UPLOAD_DIR, saved_name)
+    file.save(path)
+    image_url = f"/uploads/{saved_name}"
+
+    # YOLO detections
+    try:
+        img_bgr, objects = with_timeout(detect_objects, path, timeout=DETECTION_TIMEOUT)
+    except FuturesTimeoutError:
+        return jsonify({"ok": False, "error": "Detection timed out. Try a smaller image."}), 504
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Detection failed: {type(e).__name__}"}), 500
+
+    summary = summarize_objects(objects)
+
+    # BLIP caption
+    try:
+        cap = with_timeout(caption_image, img_bgr, timeout=CAPTION_TIMEOUT)
+    except FuturesTimeoutError:
+        cap = "A photo with several visible elements."
+    except Exception:
+        cap = "A photo with several visible elements."
+
+    overall = build_paragraph(cap, summary["counts"])
+
+    elapsed_ms = int((time.time() - t0) * 1000)
+    return jsonify({
+        "ok": True,
+        "image_url": image_url,
+        "overall_text": overall,
+        "elapsed_ms": elapsed_ms,
+        "detections": summary["counts"],
+    })
+
+
+@app.errorhandler(413)
+def too_large(_):
+    return jsonify({"ok": False, "error": "File too large. Max is 8MB."}), 413
+
+
+if __name__ == "__main__":
+    app.run(debug=True)

@@ -2,6 +2,13 @@ import os
 print("RUNNING:", os.path.abspath(__file__))
 print("STATIC DIR SHOULD BE:", os.path.join(os.path.dirname(__file__), "static"))
 
+# Make caches writable on Render (ephemeral FS) and reduce thread-related memory spikes
+os.environ.setdefault("HF_HOME", "/tmp/hf")
+os.environ.setdefault("TRANSFORMERS_CACHE", "/tmp/hf")
+os.environ.setdefault("YOLO_CONFIG_DIR", "/tmp/Ultralytics")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+
 import uuid
 import time
 from collections import Counter
@@ -33,9 +40,22 @@ DETECTION_TIMEOUT = 120
 CAPTION_TIMEOUT = 120
 executor = ThreadPoolExecutor(max_workers=2)
 
-# ----------------- Load models ONCE -----------------
-yolo = YOLO("yolov8n.pt")
-captioner = pipeline("image-to-text", model="Salesforce/blip-image-captioning-large")
+# ----------------- Load models -----------------
+# IMPORTANT: Loading large models at import time can crash low-memory instances before the server binds a port.
+yolo = None
+captioner = None
+
+def _get_yolo():
+    global yolo
+    if yolo is None:
+        yolo = YOLO("yolov8n.pt")
+    return yolo
+
+def _get_captioner():
+    global captioner
+    if captioner is None:
+        captioner = pipeline("image-to-text", model="Salesforce/blip-image-captioning-large")
+    return captioner
 
 
 def allowed_file(name: str) -> bool:
@@ -47,13 +67,14 @@ def with_timeout(fn, *args, timeout: int):
     return fut.result(timeout=timeout)
 
 
-# ----------------- Core logic -----------------
+# ----------------- Functions -----------------
 def detect_objects(image_path: str, conf_thres=0.20, img_size=960):
     img = cv2.imread(image_path)
     if img is None:
         raise FileNotFoundError(image_path)
 
-    res = yolo.predict(img, conf=conf_thres, imgsz=img_size, verbose=False)[0]
+    model = _get_yolo()
+    res = model.predict(img, conf=conf_thres, imgsz=img_size, verbose=False)[0]
     names = res.names
 
     objects = []
@@ -75,11 +96,11 @@ def summarize_objects(objects):
 
 def caption_image(img_bgr) -> str:
     pil = Image.fromarray(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
-    return captioner(pil, max_new_tokens=60)[0]["generated_text"].strip()
+    cap = _get_captioner()
+    return cap(pil, max_new_tokens=60)[0]["generated_text"].strip()
 
 
 def build_paragraph(caption: str, counts_dict: dict) -> str:
-    # One paragraph, caption + factual detected counts
     counts = dict(counts_dict)
 
     people = counts.pop("person", 0)

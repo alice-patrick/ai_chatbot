@@ -1,16 +1,28 @@
 import os
-print("RUNNING:", os.path.abspath(__file__))
-print("STATIC DIR SHOULD BE:", os.path.join(os.path.dirname(__file__), "static"))
+
+# ----------------- Early env setup (MUST be before importing transformers/ultralytics) -----------------
+BASE_DIR = os.path.dirname(__file__)
 
 # Make caches writable on Render (ephemeral FS) and reduce thread-related memory spikes
 os.environ.setdefault("HF_HOME", "/tmp/hf")
-os.environ.setdefault("TRANSFORMERS_CACHE", "/tmp/hf")
+os.environ.setdefault("HF_HUB_CACHE", "/tmp/hf/hub")
+os.environ.setdefault("HF_ASSETS_CACHE", "/tmp/hf/assets")
+# Do NOT rely on TRANSFORMERS_CACHE (deprecated). If you keep it, keep it only for older versions:
+# os.environ.setdefault("TRANSFORMERS_CACHE", "/tmp/hf")
+
 os.environ.setdefault("YOLO_CONFIG_DIR", "/tmp/Ultralytics")
+
+# Reduce CPU thread fan-out that can spike memory
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
 
+print("RUNNING:", os.path.abspath(__file__))
+print("STATIC DIR SHOULD BE:", os.path.join(BASE_DIR, "static"))
+
+# ----------------- Imports -----------------
 import uuid
 import time
+import threading
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
@@ -22,9 +34,7 @@ from ultralytics import YOLO
 from transformers import pipeline
 from PIL import Image
 
-
 # ----------------- Flask setup -----------------
-BASE_DIR = os.path.dirname(__file__)
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 
@@ -36,28 +46,45 @@ app = Flask(__name__, template_folder=TEMPLATE_DIR)
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # 8MB
 ALLOWED = {"png", "jpg", "jpeg", "webp"}
 
+# Timeouts (seconds)
 DETECTION_TIMEOUT = 120
 CAPTION_TIMEOUT = 120
-executor = ThreadPoolExecutor(max_workers=2)
 
-# ----------------- Load models -----------------
-# IMPORTANT: Loading large models at import time can crash low-memory instances before the server binds a port.
+# IMPORTANT: Keep concurrency low on small instances to avoid OOM.
+executor = ThreadPoolExecutor(max_workers=1)
+
+# ----------------- Lazy-loaded models with locks (avoid race double-load) -----------------
 yolo = None
 captioner = None
+
+_yolo_lock = threading.Lock()
+_cap_lock = threading.Lock()
+
 
 def _get_yolo():
     global yolo
     if yolo is None:
-        yolo = YOLO("yolov8n.pt")
+        with _yolo_lock:
+            if yolo is None:
+                # NOTE: ensure yolov8n.pt exists (best: download at build time)
+                yolo = YOLO("yolov8n.pt")
     return yolo
+
 
 def _get_captioner():
     global captioner
     if captioner is None:
-        captioner = pipeline("image-to-text", model="Salesforce/blip-image-captioning-large")
+        with _cap_lock:
+            if captioner is None:
+                # This is heavy. If Render RAM is small, switch to a smaller model.
+                captioner = pipeline(
+                    "image-to-text",
+                    model="Salesforce/blip-image-captioning-large",
+                )
     return captioner
 
 
+# ----------------- Helpers -----------------
 def allowed_file(name: str) -> bool:
     return "." in name and name.rsplit(".", 1)[1].lower() in ALLOWED
 
@@ -67,7 +94,7 @@ def with_timeout(fn, *args, timeout: int):
     return fut.result(timeout=timeout)
 
 
-# ----------------- Functions -----------------
+# ----------------- Core functions -----------------
 def detect_objects(image_path: str, conf_thres=0.20, img_size=960):
     img = cv2.imread(image_path)
     if img is None:
@@ -97,11 +124,14 @@ def summarize_objects(objects):
 def caption_image(img_bgr) -> str:
     pil = Image.fromarray(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
     cap = _get_captioner()
-    return cap(pil, max_new_tokens=60)[0]["generated_text"].strip()
+    out = cap(pil, max_new_tokens=60)
+    if not out or "generated_text" not in out[0]:
+        return "A photo with several visible elements."
+    return out[0]["generated_text"].strip()
 
 
 def build_paragraph(caption: str, counts_dict: dict) -> str:
-    counts = dict(counts_dict)
+    counts = dict(counts_dict or {})
 
     people = counts.pop("person", 0)
     obj_items = sorted(counts.items(), key=lambda x: x[1], reverse=True)
@@ -119,6 +149,11 @@ def build_paragraph(caption: str, counts_dict: dict) -> str:
 
 
 # ----------------- Routes -----------------
+@app.get("/health")
+def health():
+    return "ok", 200
+
+
 @app.route("/")
 def home():
     return render_template("index.html")
@@ -170,13 +205,15 @@ def chat_api():
     overall = build_paragraph(cap, summary["counts"])
 
     elapsed_ms = int((time.time() - t0) * 1000)
-    return jsonify({
-        "ok": True,
-        "image_url": image_url,
-        "overall_text": overall,
-        "elapsed_ms": elapsed_ms,
-        "detections": summary["counts"],
-    })
+    return jsonify(
+        {
+            "ok": True,
+            "image_url": image_url,
+            "overall_text": overall,
+            "elapsed_ms": elapsed_ms,
+            "detections": summary["counts"],
+        }
+    )
 
 
 @app.errorhandler(413)
@@ -185,4 +222,5 @@ def too_large(_):
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Local dev only. On Render you'll run via gunicorn.
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")), debug=True)

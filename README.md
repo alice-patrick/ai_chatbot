@@ -101,38 +101,30 @@ essay.structure/
 ├─ app.py
 └─ README.md
 
-
-
 ---
 
 ## Installation
-
 ```bash
 git clone https://github.com/<your-username>/<repo-name>.git
 cd <repo-name>
 pip install -r requirements.txt
-
-
----
+```
 
 ## Run Locally
+```bash
 python app.py
+```
 
----
-
-## Open in browser:
-
-[-http://127.0.0.1:5000](http://127.0.0.1:5000/)
-
----
+## Open in browser
+http://127.0.0.1:5000
 
 ## Example Output
-Description
 
--three people sitting at a table with a laptop and a cup of coffee
+**Description**  
+three people sitting at a table with a laptop and a cup of coffee
 
-Detected Objects
-
+**Detected Objects**
+```json
 {
   "person": 3,
   "laptop": 1,
@@ -141,32 +133,21 @@ Detected Objects
   "dining table": 1,
   "book": 1
 }
-
----
+```
 
 ## Use Cases
 - Assistive technology (visual scene description)
-
 - Image content analysis
-
 - Computer vision demos
-
 - AI education projects
-
 - Dataset annotation support
 
----
-
 ## Future Improvements
--Real-time webcam input
+- Real-time webcam input
+- Batch image processing
+- Bounding box visualization
+- Model selection options
+- API endpoint for external use
 
--Batch image processing
-
--Bounding box visualization
-
--Model selection options
-
--API endpoint for external use
-
-License
+## License
 MIT License

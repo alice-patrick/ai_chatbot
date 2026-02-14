@@ -89,20 +89,18 @@ It demonstrates the integration of computer vision models into a simple interact
 ## Project Structure
 
 essay.structure/
-│
-├── app/
-│ ├── templates/
-│ │ └── index.html
-│ ├── static/
-│ │ └── style.css
-│ └── uploads/
-│
-├── assets/
-│ ├── 01_upload.png
-│ └── 02_result.png
-│
-├── app.py
-└── README.md
+├─ app/
+│  ├─ templates/
+│  │  └─ index.html
+│  ├─ static/
+│  │  └─ style.css
+│  └─ uploads/
+├─ assets/
+│  ├─ 01_upload.png
+│  └─ 02_result.png
+├─ app.py
+└─ README.md
+
 
 
 ---

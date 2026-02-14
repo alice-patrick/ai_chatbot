@@ -14,11 +14,11 @@ It integrates object detection and image captioning to produce both natural-lang
 3. View detected objects and scene summary  
 
 <p align="center">
-  <img src="essay.structure/app/assets/screenshot_upload.png" width="700">
+  <img src="essay.structure/app/assets/01_upload.png" width="700">
 </p>
 
 <p align="center">
-  <img src="essay.structure/app/assets/screenshot_result.png" width="700">
+  <img src="essay.structure/app/assets/02_result.png" width="700">
 </p>
 
 

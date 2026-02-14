@@ -108,20 +108,21 @@ essay.structure/
 ## Installation
 
 ```bash
--git clone https://github.com/<your-username>/<repo-name>.git
--cd <repo-name>
--pip install -r requirements.txt
+git clone https://github.com/<your-username>/<repo-name>.git
+cd <repo-name>
+pip install -r requirements.txt
+
 
 ---
 
 ## Run Locally
--python app.py
+python app.py
 
 ---
 
 ## Open in browser:
 
--http://127.0.0.1:5000
+[-http://127.0.0.1:5000](http://127.0.0.1:5000/)
 
 ---
 
@@ -144,15 +145,15 @@ Detected Objects
 ---
 
 ## Use Cases
--Assistive technology (visual scene description)
+- Assistive technology (visual scene description)
 
--Image content analysis
+- Image content analysis
 
--Computer vision demos
+- Computer vision demos
 
--AI education projects
+- AI education projects
 
--Dataset annotation support
+- Dataset annotation support
 
 ---
 

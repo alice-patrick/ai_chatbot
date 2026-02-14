@@ -108,18 +108,28 @@ essay.structure/
 ## Installation
 
 ```bash
-git clone https://github.com/<your-username>/<repo-name>.git
-cd <repo-name>
-pip install -r requirements.txt
-Run Locally
-python app.py
-Open in browser:
+-git clone https://github.com/<your-username>/<repo-name>.git
+-cd <repo-name>
+-pip install -r requirements.txt
 
-http://127.0.0.1:5000
-Example Output
+---
+
+## Run Locally
+-python app.py
+
+---
+
+## Open in browser:
+
+-http://127.0.0.1:5000
+
+---
+
+## Example Output
 Description
 
-three people sitting at a table with a laptop and a cup of coffee
+-three people sitting at a table with a laptop and a cup of coffee
+
 Detected Objects
 
 {
@@ -130,27 +140,32 @@ Detected Objects
   "dining table": 1,
   "book": 1
 }
-Use Cases
-Assistive technology (visual scene description)
 
-Image content analysis
+---
 
-Computer vision demos
+## Use Cases
+-Assistive technology (visual scene description)
 
-AI education projects
+-Image content analysis
 
-Dataset annotation support
+-Computer vision demos
 
-Future Improvements
-Real-time webcam input
+-AI education projects
 
-Batch image processing
+-Dataset annotation support
 
-Bounding box visualization
+---
 
-Model selection options
+## Future Improvements
+-Real-time webcam input
 
-API endpoint for external use
+-Batch image processing
+
+-Bounding box visualization
+
+-Model selection options
+
+-API endpoint for external use
 
 License
 MIT License

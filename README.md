@@ -87,8 +87,8 @@ It demonstrates the integration of computer vision models into a simple interact
 ---
 
 ## Project Structure
-
-essay.structure/
+```
+.
 ├─ app/
 │  ├─ templates/
 │  │  └─ index.html
@@ -100,6 +100,7 @@ essay.structure/
 │  └─ 02_result.png
 ├─ app.py
 └─ README.md
+```
 
 ---
 

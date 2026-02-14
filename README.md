@@ -22,8 +22,6 @@ It integrates object detection and image captioning to produce both natural-lang
 </p>
 
 
-> *(Optional: add `assets/demo.gif` to show full interaction)*
-
 ---
 
 ## Features
